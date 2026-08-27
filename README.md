@@ -18,6 +18,12 @@ Implemented and tested:
 - bounded verifier-closed retry loop;
 - RTX 3090 24 GB NF4 Qwen3-VL loader and configuration.
 
+Completed experimental gates include a 120-trajectory acquisition pilot,
+leave-one-group-out latent geometry, matched fast-KV causal controls, 100-step
+QLoRA consolidation, and all 99 local-Qwen PEAM-compatible task/seed/method
+trials. See [`results/STATUS.md`](results/STATUS.md) and
+[`results/PEAM_COMPATIBLE_REPORT.md`](results/PEAM_COMPATIBLE_REPORT.md).
+
 The runtime workspace can use the official Voyager repository, Qwen checkpoint,
 MineExplorer dataset, and paper PDFs. These large/downloaded resources are not
 committed; see `RESOURCE_MANIFEST.md` for their pinned sources.

@@ -21,12 +21,7 @@ results/**/*.safetensors
 results/*_kv/
 results/qlora_*/
 
-# The primary Gate-4 file is checkpointed while Minecraft is running. Add it
-# only after the run is finalized to avoid publishing an inconsistent snapshot.
-results/peam_compatible.json
-
 # Local configuration and credentials
 .env
 *.env
 !configs/*.env.example
-

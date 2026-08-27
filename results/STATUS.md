@@ -1,4 +1,4 @@
-# GR-KTC experiment status — 2026-08-26
+# GR-KTC experiment status — 2026-08-27
 
 ## Verified results
 
@@ -22,11 +22,21 @@
 - Gate 1 passed on the preregistered Pilot size. Layer-24 direction cosine was
   33/42 = 78.57%, group-bootstrap 95% CI [0.571, 0.955], random-label
   one-sided p=0.0029. Layer 35 did not pass and is not selected downstream.
-- Real all-36-layer KV prefix generation is operational at 16.56 GiB peak.
-  One-context rescue pilot improved mean milestone score from 0.625 (no memory)
-  to 0.875 (positive memory), but failed memory also reached 0.750; Gate 2
-  remains open pending matched real-trajectory controls across contexts.
-- Unit/integration tests: 51 passed.
+- Gate 2 passed in the matched real-context causal control: layer-24 quality
+  memory succeeded on 14/16 trials versus 5/16 with no memory (exact McNemar
+  p=0.003906) and 7/16 with failed memory (p=0.015625). Failed memory did not
+  improve over no memory (p=0.6875). All-36-layer BF16 prefix inference peaked
+  at approximately 16.5 GiB.
+- Gate 3 passed its preregistered directional condition on related held-out
+  MineExplorer contexts: memory-free GR-KTC slow QLoRA achieved 12/16 versus
+  shared BC+DPO QLoRA 10/16 and base 7/16. The GR-KTC versus BC+DPO difference
+  is not significant at this pilot size (two discordant pairs, p=0.5).
+- Gate 4 completed all 99 unique task/seed/method trials with pristine-world
+  restoration before every condition and at most four retries. Local Qwen base
+  achieved 6/33, shared BC+DPO 3/33, and memory-free GR-KTC 5/33. GR-KTC
+  recovered two trials relative to BC+DPO but did not exceed base; neither
+  paired comparison was significant. See `PEAM_COMPATIBLE_REPORT.md`.
+- Unit/integration tests: 55 passed.
 
 ## Synthetic mechanism gate
 
@@ -63,10 +73,13 @@ cap. It remains an ablation until it beats A/B under the same real-data gates.
   invalid movement packet race in Mineflayer. Inventory/equipment and setup
   commands remain deterministic.
 
-## Not yet claimed
+## Claim boundaries
 
-- No full 11-task × 3-seed PEAM result exists yet.
-- A/B/C fast-memory rescue and 100-step GRTA+DPO memory-free improvements have
-  not yet been measured in Minecraft.
+- The completed 11-task × 3-seed run is a local-Qwen, PEAM-compatible stress
+  test, not an official PEAM reproduction. It does not match PEAM's Azure
+  GPT-4o slow tier, accumulated skill pool, or A100 serving setup.
+- A/B/C are implemented and mechanism-tested; Gate 2 tests the selected
+  contrastive layer-24 fast memory. A full 33-trial A/B/C endpoint comparison
+  has not been run and is not claimed.
 - The public MineExplorer execution repository is unavailable; its dataset and
   verifier schema are implemented, but official 1,800-step parity is unverified.

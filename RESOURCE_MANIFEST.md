@@ -35,6 +35,9 @@ Snapshot date: 2026-08-26
   bot is allowlisted and operator-enabled for deterministic environment setup.
 - The Voyager bridge was patched for current `minecrafthawkeye` CommonJS export
   compatibility and a headless-safe hard reset option.
+- The exact tracked modifications are in `patches/voyager-local-1.19.patch`;
+  reproduce the checkout and Node/Python install with
+  `scripts/bootstrap_voyager.sh`.
 - Voyager pins Mineflayer 4.8.1, but its crafting transaction hangs against the
   local Minecraft 1.19 dedicated server. Mineflayer is therefore locked to
   4.14.0 after a reference `craftItem` regression test succeeded. This is a
