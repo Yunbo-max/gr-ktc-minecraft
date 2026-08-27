@@ -88,6 +88,7 @@ def build_report(payload: dict) -> dict:
         }
     return {
         "protocol": "peam-compatible-local-qwen-report-v1",
+        "precision": payload.get("precision", "unknown"),
         "audit": {
             "complete": True, "trials": 99, "unique_trials": 99,
             "paired_world_restore": True, "max_retries": 4,
@@ -113,7 +114,8 @@ def build_report(payload: dict) -> dict:
 def markdown(report: dict) -> str:
     labels = {"base": "Local Qwen base", "control": "Shared QLoRA BC+DPO",
               "full": "GR-KTC slow (memory-free)"}
-    lines = ["# Gate 4 — PEAM-compatible local-Qwen stress test", "", report["claim_boundary"], "",
+    precision = str(report.get("precision", "unknown")).upper()
+    lines = [f"# Gate 4 — PEAM-compatible local-Qwen {precision} stress test", "", report["claim_boundary"], "",
              "| Method | Success | Wilson 95% CI | Parser valid | Median call | Tokens/task |",
              "|---|---:|---:|---:|---:|---:|"]
     for condition in CONDITIONS:

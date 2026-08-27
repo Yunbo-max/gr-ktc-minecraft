@@ -31,11 +31,13 @@
   MineExplorer contexts: memory-free GR-KTC slow QLoRA achieved 12/16 versus
   shared BC+DPO QLoRA 10/16 and base 7/16. The GR-KTC versus BC+DPO difference
   is not significant at this pilot size (two discordant pairs, p=0.5).
-- Gate 4 completed all 99 unique task/seed/method trials with pristine-world
-  restoration before every condition and at most four retries. Local Qwen base
-  achieved 6/33, shared BC+DPO 3/33, and memory-free GR-KTC 5/33. GR-KTC
-  recovered two trials relative to BC+DPO but did not exceed base; neither
-  paired comparison was significant. See `PEAM_COMPATIBLE_REPORT.md`.
+- Gate 4 BF16 completed all 99 unique task/seed/method trials with pristine-world
+  restoration before every condition, a 2,048-token cap, and at most four
+  retries. Local Qwen base achieved 6/33, shared BC+DPO 2/33, and memory-free
+  GR-KTC 6/33. GR-KTC recovered all four trials lost by BC+DPO (exact McNemar
+  p=0.125) and matched base exactly, but did not exceed it. The earlier complete
+  NF4 diagnostic was 6/33, 3/33, and 5/33 respectively and is retained as a
+  precision ablation. See `PEAM_COMPATIBLE_REPORT.md`.
 - Unit/integration tests: 55 passed.
 
 ## Synthetic mechanism gate
