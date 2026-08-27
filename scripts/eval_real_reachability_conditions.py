@@ -47,6 +47,7 @@ CONDITIONS = (
     "base", "state", "weight_individual", "weight_shared",
     "state_plus_weight", "decomposed",
     "retrieved_decomposed",
+    "kv_complement",
 )
 
 
@@ -57,6 +58,10 @@ def main() -> None:
     parser.add_argument("--max-new-tokens", type=int, default=384)
     parser.add_argument("--conditions", nargs="+", choices=CONDITIONS, default=list(CONDITIONS))
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--complement-config", type=Path,
+        default=ROOT / "results/causal_kv_complement_rank8.json",
+    )
     parser.add_argument(
         "--output", type=Path,
         default=ROOT / "results/real_reachability_conditions.json",
@@ -93,6 +98,7 @@ def main() -> None:
     head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
     flat = load_file(ROOT / "results/fast_kv_cross_context_memories.safetensors")
     memories = {}
+    quality_flattened = {}
     for scene in scene_ids:
         advantages = torch.tensor(source["acquisitions"][scene]["advantages"])
         pos_count = int((advantages > 0).sum())
@@ -104,10 +110,18 @@ def main() -> None:
             for index in range(config.num_hidden_layers)
         }
         center[24] = flat[f"scene_{scene}_contrastive_layer_24"]
+        quality_flattened[scene] = center
         memories[scene] = KVPrefixMemory.from_flattened(
             center, kv_heads=config.num_key_value_heads, head_dim=head_dim,
             context_id=f"{scene}:matched", value_scale=0.25,
         )
+    complement_scales = {}
+    if "kv_complement" in args.conditions:
+        complement_report = json.loads(args.complement_config.read_text())
+        complement_scales = {
+            scene: float(complement_report["contexts"][scene]["selected"]["value_scale"])
+            for scene in scene_ids
+        }
 
     client = VoyagerHTTPClient(timeout_seconds=120)
     action_parser = VoyagerActionParser(ROOT / "third_party/voyager/voyager/env/mineflayer")
@@ -150,9 +164,17 @@ def main() -> None:
                 )
                 inputs = {key: value.to(model.device) for key, value in inputs.items()}
                 memory = memories[scene] if condition in ("state", "state_plus_weight") else None
+                if condition == "kv_complement":
+                    memory = KVPrefixMemory.from_flattened(
+                        quality_flattened[scene],
+                        kv_heads=config.num_key_value_heads,
+                        head_dim=head_dim,
+                        context_id=f"{scene}:matched",
+                        value_scale=complement_scales[scene],
+                    )
                 fit = individual[scene] if condition == "weight_individual" else shared
                 with ExitStack() as hooks:
-                    if condition in ("weight_individual", "weight_shared", "state_plus_weight", "decomposed", "retrieved_decomposed"):
+                    if condition in ("weight_individual", "weight_shared", "state_plus_weight", "decomposed", "retrieved_decomposed", "kv_complement"):
                         hooks.enter_context(ResidualLoRAHook(layer, fit.lora_a, fit.lora_b))
                     if condition == "decomposed":
                         hooks.enter_context(ScheduledResidualStateHook(layer, shared_unreachable[scene]))
@@ -219,6 +241,7 @@ def main() -> None:
         "protocol": "real-reachability-conditions-v1",
         "rank": args.rank, "scene_ids": scene_ids, "seeds": args.seeds,
         "conditions": args.conditions,
+        "complement_value_scales": complement_scales,
         "summary": summary, "comparisons": comparisons, "trials": trials,
         "rho_individual_mean": sum(x.rho for x in individual.values()) / len(individual),
         "rho_shared": shared.rho,

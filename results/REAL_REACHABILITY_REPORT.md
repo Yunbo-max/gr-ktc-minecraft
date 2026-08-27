@@ -76,6 +76,16 @@ query-retrieved decomposition `0/4`. Query retrieval alone therefore does not
 recover the native KV intervention. The causal interface (attention K/V versus
 post-layer hidden addition) is itself part of the mechanism.
 
+A native-KV complement follow-up kept that causal interface and selected a
+single quality-prefix value scale by teacher-forced hidden MSE. Both contexts
+selected `0.1875` (the full-State control uses `0.25`). On two new seeds the
+paired outcomes were Base `2/4`, State `2/4`, Weight-shared `0/4`, and
+Weight-shared + scaled KV complement `0/4`; mean milestone scores were `0.50`,
+`0.75`, `0.25`, and `0.25`. Thus matching a hidden effect by scalar KV strength
+does not preserve the behavioral rescue. The next method must learn the K/V
+geometry (and likely query-dependent routing), not merely replay hidden states
+or attenuate a fixed prefix.
+
 ## Other three ideas on real effects
 
 - KV-conditioned basis, rank 8: one shared basis `rho=0.475`; two
@@ -95,6 +105,8 @@ post-layer hidden addition) is itself part of the mechanism.
 - `real_reachability_conditions_rank32.json`: 40 rank-32 trials.
 - `real_reachability_decomposed_rank8.json`: 16 exact-split behavior trials.
 - `real_reachability_retrieved_rank8.json`: 16 query-retrieved split trials.
+- `causal_kv_complement_rank8.json`: teacher-forced native-KV scale search.
+- `real_reachability_kv_complement_rank8.json`: 16 scaled-KV behavior trials.
 
 ## MineExplorer hop generalization
 

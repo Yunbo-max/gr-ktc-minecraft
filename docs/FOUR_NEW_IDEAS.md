@@ -68,6 +68,10 @@ cross-run and method-scope caveats.
 
 The follow-up also tests scheduled and query-retrieved unreachable hidden
 memory. Neither reproduces the native quality-KV rescue, which narrows the next
-method step to preserving the attention K/V causal interface. A 24-trial
+method step to preserving the attention K/V causal interface. A further
+native-KV experiment selected value scale `0.1875` on both contexts by
+teacher-forced hidden MSE, but its Weight + KV complement condition scored
+`0/4` versus State `2/4`. Scalar attenuation is therefore insufficient; K/V
+geometry must be learned. A 24-trial
 memory-free 1–4-hop MineExplorer pilot is stored in
 `results/memory_free_hop_generalization_pilot.json`.
