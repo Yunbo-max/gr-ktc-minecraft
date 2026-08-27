@@ -112,3 +112,18 @@ PYTHONPATH=. .venv/bin/python scripts/train_future_qlora.py --steps 100 \
   --future-weight 0 --adapter-output results/qlora_future_control_100 \
   --report results/qlora_future_control_100.json
 ```
+
+Latent Population now also has a real native-KV behavior path. The current
+prompt's layer-24 latent retrieves and softly mixes four all-layer K/V
+trajectories. Archive top-1 retrieval is `4/4`, but the posterior is shallow
+and all archive conditions are at a `4/4` ceiling. On four unseen tasks,
+Population, Uniform, and Base all score `3/4` (mean MSR `0.875`). This validates
+the runtime interface but rejects untrained cosine routing as the method.
+
+```bash
+PYTHONPATH=. .venv/bin/python scripts/eval_latent_population_kv.py \
+  --seeds 340 --output results/latent_population_kv_archive.json
+PYTHONPATH=. .venv/bin/python scripts/eval_latent_population_kv.py \
+  --scene-ids 0000 0034 0044 0065 --seeds 342 \
+  --output results/latent_population_kv_heldout.json
+```
