@@ -69,6 +69,13 @@ replayed along a freely diverging generation path. Converting the unreachable
 component back into a query-responsive KV memory, rather than a fixed phase
 schedule, remains a required method step.
 
+A query-responsive hidden-memory follow-up used the current decode state to
+retrieve the nearest unreachable correction instead of replaying a fixed
+phase. On two further seeds: Base `0/4`, State `4/4`, Weight-shared `0/4`,
+query-retrieved decomposition `0/4`. Query retrieval alone therefore does not
+recover the native KV intervention. The causal interface (attention K/V versus
+post-layer hidden addition) is itself part of the mechanism.
+
 ## Other three ideas on real effects
 
 - KV-conditioned basis, rank 8: one shared basis `rho=0.475`; two
@@ -87,4 +94,24 @@ schedule, remains a required method step.
 - `real_reachability_conditions_rank8_pilot.json`: 40 rank-8 trials.
 - `real_reachability_conditions_rank32.json`: 40 rank-32 trials.
 - `real_reachability_decomposed_rank8.json`: 16 exact-split behavior trials.
+- `real_reachability_retrieved_rank8.json`: 16 query-retrieved split trials.
+
+## MineExplorer hop generalization
+
+A memory-free external pilot selected one 1/2/3/4-hop MineExplorer scenario and
+two seeds (24 trials total):
+
+| Method | Full success | Mean milestone score | Parser valid |
+|---|---:|---:|---:|
+| Base | 0/8 | 0.271 | 8/8 |
+| Shared BC+DPO | 2/8 | 0.396 | 8/8 |
+| GR-KTC QLoRA | 2/8 | 0.396 | 8/8 |
+
+Both adapters improve the 2-hop crafting task from partial to full success.
+They do not improve the selected 1-hop visual-location task or the 3/4-hop
+tasks, where every method completes only part of the milestone chain. This is
+a small stratified pilot, not evidence that reachability monotonically declines
+with hop count.
+
+Raw file: `memory_free_hop_generalization_pilot.json`.
 - `real_four_ideas_analysis.json`: unified four-idea real-effect analysis.

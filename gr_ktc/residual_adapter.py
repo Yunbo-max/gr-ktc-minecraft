@@ -91,6 +91,62 @@ class ScheduledResidualStateHook(AbstractContextManager):
         return False
 
 
+class QueryResponsiveResidualMemoryHook(AbstractContextManager):
+    """Retrieve unreachable corrections by the current hidden-state query."""
+
+    def __init__(
+        self,
+        layer: torch.nn.Module,
+        keys: torch.Tensor,
+        values: torch.Tensor,
+        *,
+        temperature: float = 0.1,
+        top_k: int = 4,
+        scale: float = 1.0,
+    ):
+        if keys.ndim != 2 or values.ndim != 2 or keys.shape != values.shape:
+            raise ValueError("keys and values must have equal [tokens, hidden] shapes")
+        if temperature <= 0 or top_k < 1:
+            raise ValueError("temperature and top_k must be positive")
+        self.layer = layer
+        self.keys = keys
+        self.values = values
+        self.temperature = float(temperature)
+        self.top_k = min(top_k, keys.shape[0])
+        self.scale = float(scale)
+        self._handle: Any = None
+
+    def _hook(self, module, inputs, output):
+        hidden = inputs[0]
+        if hidden.shape[-2] != 1:
+            return output
+        query = torch.nn.functional.normalize(hidden[0, 0].float(), dim=0)
+        keys = torch.nn.functional.normalize(
+            self.keys.to(hidden.device).float(), dim=-1
+        )
+        logits = keys @ query / self.temperature
+        top = logits.topk(self.top_k)
+        weights = torch.softmax(top.values, dim=0)
+        values = self.values.to(device=hidden.device, dtype=hidden.dtype)
+        delta = (weights.to(hidden.dtype)[:, None] * values[top.indices]).sum(0)
+        delta = delta.view(1, 1, -1) * self.scale
+        if isinstance(output, tuple):
+            return (output[0] + delta, *output[1:])
+        return output + delta
+
+    def __enter__(self):
+        if self._handle is not None:
+            raise RuntimeError("hook already active")
+        self._handle = self.layer.register_forward_hook(self._hook)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self._handle is not None:
+            self._handle.remove()
+            self._handle = None
+        return False
+
+
 def text_layer(model: Any, layer_id: int) -> torch.nn.Module:
     """Resolve the text layer across base Qwen and PEFT wrappers."""
     candidates = [model]

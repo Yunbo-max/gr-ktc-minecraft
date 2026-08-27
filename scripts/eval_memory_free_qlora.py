@@ -36,14 +36,33 @@ def main() -> None:
         "--refresh-full", action="store_true",
         help="Reuse checkpointed base/control trials and rerun only the full adapter.",
     )
+    argument_parser.add_argument(
+        "--scene-ids", nargs="+",
+        help="Override the built-in retention/heldout scene set.",
+    )
+    argument_parser.add_argument(
+        "--seeds", type=int, nargs="+",
+        help="Override the built-in evaluation seeds.",
+    )
+    argument_parser.add_argument("--output", type=Path)
     args = argument_parser.parse_args()
-    if args.suite == "retention":
+    if args.output is not None:
+        output_path = args.output
+    elif args.suite == "retention":
         output_path = ROOT / "results/memory_free_qlora.json"
-        scene_ids = ["0281", "0299"]
-        seeds = list(range(212, 220))
     else:
         output_path = ROOT / "results/memory_free_qlora_heldout.json"
+    if args.scene_ids is not None:
+        scene_ids = args.scene_ids
+    elif args.suite == "retention":
+        scene_ids = ["0281", "0299"]
+    else:
         scene_ids = ["0391", "0499", "0532", "0549"]
+    if args.seeds is not None:
+        seeds = args.seeds
+    elif args.suite == "retention":
+        seeds = list(range(212, 220))
+    else:
         seeds = list(range(220, 224))
     scenarios = {
         item.scene_id: item for item in load_mineexplorer(
@@ -188,8 +207,8 @@ def main() -> None:
         "peak_gpu_gib": torch.cuda.max_memory_allocated() / 2**30,
         "suite": args.suite,
         "scope_warning": (
-            "Related-context generalization; not PEAM held-out success."
-            if args.suite == "heldout" else
+            "MineExplorer memory-free generalization; not PEAM held-out success."
+            if args.suite == "heldout" or args.scene_ids is not None else
             "Training-context retention gate; not held-out PEAM success."
         ),
     }

@@ -31,7 +31,12 @@ from gr_ktc.generation import generate_with_kv_prefix
 from gr_ktc.kv_prefix import KVPrefixMemory
 from gr_ktc.model_loader import load_qwen3_vl_24gb
 from gr_ktc.reachability import fit_individual_and_shared, fit_reachability
-from gr_ktc.residual_adapter import ResidualLoRAHook, ScheduledResidualStateHook, text_layer
+from gr_ktc.residual_adapter import (
+    QueryResponsiveResidualMemoryHook,
+    ResidualLoRAHook,
+    ScheduledResidualStateHook,
+    text_layer,
+)
 from gr_ktc.voyager_http import VoyagerHTTPClient, final_observation
 from scripts.collect_mineexplorer_pilot import verifier_score_events
 from scripts.run_local_qwen_action import compact_observation, primitive_programs
@@ -41,6 +46,7 @@ from scripts.run_local_smoke_suite import SYSTEM
 CONDITIONS = (
     "base", "state", "weight_individual", "weight_shared",
     "state_plus_weight", "decomposed",
+    "retrieved_decomposed",
 )
 
 
@@ -146,10 +152,18 @@ def main() -> None:
                 memory = memories[scene] if condition in ("state", "state_plus_weight") else None
                 fit = individual[scene] if condition == "weight_individual" else shared
                 with ExitStack() as hooks:
-                    if condition in ("weight_individual", "weight_shared", "state_plus_weight", "decomposed"):
+                    if condition in ("weight_individual", "weight_shared", "state_plus_weight", "decomposed", "retrieved_decomposed"):
                         hooks.enter_context(ResidualLoRAHook(layer, fit.lora_a, fit.lora_b))
                     if condition == "decomposed":
                         hooks.enter_context(ScheduledResidualStateHook(layer, shared_unreachable[scene]))
+                    if condition == "retrieved_decomposed":
+                        hooks.enter_context(QueryResponsiveResidualMemoryHook(
+                            layer,
+                            data[f"features_{scene}"],
+                            shared_unreachable[scene],
+                            temperature=0.1,
+                            top_k=4,
+                        ))
                     ids = generate_with_kv_prefix(
                         model, inputs, memory,
                         context_id=f"{scene}:matched" if memory else None,
@@ -210,7 +224,7 @@ def main() -> None:
         "rho_shared": shared.rho,
         "elapsed_seconds": time.perf_counter() - started,
         "peak_gpu_gib": torch.cuda.max_memory_allocated() / 2**30,
-        "scope_warning": "state_plus_weight uses full quality KV as an upper bound; decomposed uses a phase-scheduled hidden residual for the exact offline unreachable component, not a reconstructed KV cache.",
+        "scope_warning": "state_plus_weight uses full quality KV as an upper bound; decomposed variants inject the exact offline unreachable component as scheduled or query-retrieved hidden memory, not a reconstructed KV cache.",
     }
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

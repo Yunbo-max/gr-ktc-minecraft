@@ -65,3 +65,9 @@ they are `0.941/0.797`. Eighty paired Minecraft behavior trials show State at
 `4/8` and `6/8` versus Weight-only at `0/8` and `1/8` for ranks 8 and 32,
 respectively. Read `results/REAL_REACHABILITY_REPORT.md` for the necessary
 cross-run and method-scope caveats.
+
+The follow-up also tests scheduled and query-retrieved unreachable hidden
+memory. Neither reproduces the native quality-KV rescue, which narrows the next
+method step to preserving the attention K/V causal interface. A 24-trial
+memory-free 1–4-hop MineExplorer pilot is stored in
+`results/memory_free_hop_generalization_pilot.json`.
