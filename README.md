@@ -24,6 +24,14 @@ QLoRA consolidation, and all 99 local-Qwen PEAM-compatible task/seed/method
 trials. See [`results/STATUS.md`](results/STATUS.md) and
 [`results/PEAM_COMPATIBLE_REPORT.md`](results/PEAM_COMPATIBLE_REPORT.md).
 
+The current research direction is State–Weight Reachability: useful KV state
+corrections are decomposed into parameter-reachable (slow LoRA) and
+parameter-unreachable (fast KV) components. The four API-free analysis paths
+and the full 813-scenario MineExplorer sweep are documented in
+[`docs/FOUR_NEW_IDEAS.md`](docs/FOUR_NEW_IDEAS.md). The sweep is a mechanism
+test over activation-shaped tensors; real VLM KV/hidden captures are required
+for causal behavioral claims.
+
 The runtime workspace can use the official Voyager repository, Qwen checkpoint,
 MineExplorer dataset, and paper PDFs. These large/downloaded resources are not
 committed; see `RESOURCE_MANIFEST.md` for their pinned sources.
