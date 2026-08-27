@@ -99,3 +99,16 @@ only the current state. Across four contexts, rank-8 individual/shared
 reachability is `0.291/0.187` (`0.913/0.442` at rank 64). This replaces the
 earlier time-smoothed proxy with an actual information-asymmetric VLM target;
 adapter training and held-out behavior remain open.
+
+That training is now implemented with rank-32 NF4 QLoRA for 100 steps. Against
+an otherwise identical four-context BC+DPO control, Future QLoRA ties `8/8` on
+training contexts and `6/8` on four unseen contexts (Base `6/8` and `5/8`).
+The future objective is therefore operational and memory-free, but currently
+adds no behavioral benefit over the control.
+
+```bash
+PYTHONPATH=. .venv/bin/python scripts/train_future_qlora.py --steps 100
+PYTHONPATH=. .venv/bin/python scripts/train_future_qlora.py --steps 100 \
+  --future-weight 0 --adapter-output results/qlora_future_control_100 \
+  --report results/qlora_future_control_100.json
+```

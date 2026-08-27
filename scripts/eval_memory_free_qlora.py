@@ -45,6 +45,17 @@ def main() -> None:
         help="Override the built-in evaluation seeds.",
     )
     argument_parser.add_argument("--output", type=Path)
+    argument_parser.add_argument(
+        "--full-adapter", type=Path,
+        default=ROOT / "results/qlora_full_100",
+    )
+    argument_parser.add_argument(
+        "--control-adapter", type=Path,
+        default=ROOT / "results/qlora_control_100",
+    )
+    argument_parser.add_argument(
+        "--system-style", choices=("enhanced", "raw"), default="enhanced",
+    )
     args = argument_parser.parse_args()
     if args.output is not None:
         output_path = args.output
@@ -74,9 +85,9 @@ def main() -> None:
     )
     from peft import PeftModel
     model = PeftModel.from_pretrained(
-        base, ROOT / "results/qlora_full_100", adapter_name="full"
+        base, args.full_adapter, adapter_name="full"
     )
-    model.load_adapter(ROOT / "results/qlora_control_100", adapter_name="control")
+    model.load_adapter(args.control_adapter, adapter_name="control")
     model.eval()
     model.config.use_cache = True
     torch.cuda.reset_peak_memory_stats()
@@ -85,11 +96,13 @@ def main() -> None:
         ROOT / "third_party/voyager/voyager/env/mineflayer"
     )
     programs = primitive_programs()
-    system = SYSTEM.replace(
-        "Prefer one direct helper call with the requested\ncount. mineBlock already searches and mines. Keep the answer under 100 tokens.",
-        "Complete every subgoal in order using as many helper calls as needed. "
-        "mineBlock already searches and mines. Keep the answer under 300 tokens.",
-    )
+    system = SYSTEM
+    if args.system_style == "enhanced":
+        system = system.replace(
+            "Prefer one direct helper call with the requested\ncount. mineBlock already searches and mines. Keep the answer under 100 tokens.",
+            "Complete every subgoal in order using as many helper calls as needed. "
+            "mineBlock already searches and mines. Keep the answer under 300 tokens.",
+        )
     eos_ids = tuple(token for token in (
         processor.tokenizer.eos_token_id,
         getattr(model.generation_config, "eos_token_id", None),
@@ -198,6 +211,9 @@ def main() -> None:
         }
     report = {
         "protocol": "memory-free-qlora-v1",
+        "full_adapter": str(args.full_adapter),
+        "control_adapter": str(args.control_adapter),
+        "system_style": args.system_style,
         "scene_ids": scene_ids,
         "seeds": seeds,
         "summary": summary,
