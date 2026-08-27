@@ -22,6 +22,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from acquisition.mineexplorer import load_mineexplorer
+from gr_ktc.generation import teacher_forced_hidden_with_kv_prefix
+from gr_ktc.kv_prefix import KVPrefixMemory
 from gr_ktc.model_loader import load_qwen3_vl_24gb
 from gr_ktc.voyager_http import VoyagerHTTPClient, final_observation
 from scripts.run_local_qwen_action import compact_observation
@@ -32,6 +34,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--layer", type=int, default=24)
     parser.add_argument(
+        "--source", type=Path,
+        default=ROOT / "results/fast_kv_cross_context.json",
+    )
+    parser.add_argument(
+        "--memory-input", type=Path,
+        default=ROOT / "results/fast_kv_cross_context_memories.safetensors",
+    )
+    parser.add_argument(
         "--output", type=Path,
         default=ROOT / "results/real_reachability_data.safetensors",
     )
@@ -41,19 +51,23 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    source = json.loads((ROOT / "results/fast_kv_cross_context.json").read_text())
+    source = json.loads(args.source.read_text())
     scene_ids = source["scene_ids"]
     scenarios = {
         item.scene_id: item for item in load_mineexplorer(
             ROOT / "data/MineExplorer-Benchmark/benchmark.jsonl"
         ) if item.scene_id in scene_ids
     }
-    teachers = load_file(ROOT / "results/grktc_teacher_effects.safetensors")
+    raw_memories = load_file(args.memory_input)
     model, processor = load_qwen3_vl_24gb(
         ROOT / "models/Qwen3-VL-8B-Instruct", precision="bf16"
     )
     model.eval()
     text_config = model.config.text_config
+    head_dim = getattr(
+        text_config, "head_dim",
+        text_config.hidden_size // text_config.num_attention_heads,
+    )
     if not 0 <= args.layer < text_config.num_hidden_layers:
         raise ValueError("layer out of range")
     client = VoyagerHTTPClient(timeout_seconds=120)
@@ -103,7 +117,28 @@ def main() -> None:
         length = response.shape[-1]
         layer_input = output.hidden_states[args.layer][0, start:start + length].float().cpu()
         base_output = output.hidden_states[args.layer + 1][0, start:start + length].float().cpu()
-        teacher = teachers[f"teacher_effect_{scene_id}"].float()
+        advantages = torch.tensor(source["acquisitions"][scene_id]["advantages"])
+        pos_count, neg_count = int((advantages > 0).sum()), int((advantages < 0).sum())
+        quality = {}
+        for index in range(text_config.num_hidden_layers):
+            positive = raw_memories[f"scene_{scene_id}_positive_layer_{index}"]
+            failed = raw_memories[f"scene_{scene_id}_failed_layer_{index}"]
+            quality[index] = (pos_count * positive + neg_count * failed) / (pos_count + neg_count)
+        quality[args.layer] = raw_memories[f"scene_{scene_id}_contrastive_layer_{args.layer}"]
+        memory = KVPrefixMemory.from_flattened(
+            quality, kv_heads=text_config.num_key_value_heads, head_dim=head_dim,
+            context_id=f"{scene_id}:matched", value_scale=0.25,
+        )
+        prompt_gpu = {key: value.to(model.device) for key, value in prompt.items()}
+        response_gpu = response.to(model.device)
+        no_memory = teacher_forced_hidden_with_kv_prefix(
+            model, prompt_gpu, response_gpu, None, context_id=None, layer_id=args.layer,
+        )
+        quality_state = teacher_forced_hidden_with_kv_prefix(
+            model, prompt_gpu, response_gpu, memory,
+            context_id=f"{scene_id}:matched", layer_id=args.layer,
+        )
+        teacher = quality_state - no_memory
         take = min(layer_input.shape[0], teacher.shape[0])
         tensors[f"features_{scene_id}"] = layer_input[:take].contiguous()
         tensors[f"base_output_{scene_id}"] = base_output[:take].contiguous()
@@ -130,6 +165,8 @@ def main() -> None:
         "peak_gpu_gib": torch.cuda.max_memory_allocated() / 2**30,
         "feature_semantics": "no-memory residual stream entering selected text layer",
         "target_semantics": "matched quality-KV causal output hidden shift",
+        "source": str(args.source),
+        "memory_input": str(args.memory_input),
         "scope": "first-order residual-stream proxy; actual LoRA optimization is a separate gate",
     }
     args.metadata.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
@@ -138,4 +175,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

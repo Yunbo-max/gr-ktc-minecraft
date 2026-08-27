@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import sys
 from pathlib import Path
@@ -30,6 +31,7 @@ def main() -> None:
     )
     parser.add_argument("--ranks", type=int, nargs="+", default=[1, 2, 4, 8, 16, 32, 64])
     parser.add_argument("--ridge", type=float, default=1e-3)
+    parser.add_argument("--heterogeneity-rank", type=int, default=8)
     parser.add_argument("--threads", type=int, default=1)
     args = parser.parse_args()
     torch.set_num_threads(max(1, args.threads))
@@ -50,10 +52,27 @@ def main() -> None:
             "unreachable_norm": float(unreachable.norm()),
         })
     shared = fit_individual_and_shared(contexts, rank=max(args.ranks), ridge=args.ridge)
+    context_scaling = []
+    for count in range(1, len(contexts) + 1):
+        values = []
+        for indices in itertools.combinations(range(len(contexts)), count):
+            subset = [contexts[index] for index in indices]
+            values.append(float(fit_individual_and_shared(
+                subset, rank=args.heterogeneity_rank, ridge=args.ridge,
+            )["shared"].rho))
+        context_scaling.append({
+            "contexts": count,
+            "rank": args.heterogeneity_rank,
+            "rho_mean": sum(values) / len(values),
+            "rho_min": min(values),
+            "rho_max": max(values),
+            "subsets": len(values),
+        })
     report = {
         "protocol": "real-qwen-state-weight-reachability-proxy-v1",
         "contexts": scene_ids,
         "rank_curve": curve,
+        "context_heterogeneity": context_scaling,
         "individual_at_max_rank": individual,
         "rho_individual_mean_at_max_rank": float(shared["rho_individual_mean"]),
         "rho_joint_at_max_rank": float(shared["shared"].rho),
@@ -65,4 +84,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

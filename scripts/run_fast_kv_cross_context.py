@@ -2,6 +2,7 @@
 """Two-context paired control for real all-layer KV memory."""
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import time
@@ -27,7 +28,28 @@ from scripts.run_local_smoke_suite import SYSTEM
 
 
 def main() -> None:
-    candidate_ids = ("0281", "0299", "0391", "0499", "0532", "0549", "0251")
+    parser_cli = argparse.ArgumentParser()
+    parser_cli.add_argument(
+        "--candidate-ids", nargs="+",
+        default=["0281", "0299", "0391", "0499", "0532", "0549", "0251"],
+    )
+    parser_cli.add_argument("--target-contexts", type=int, default=2)
+    parser_cli.add_argument("--acquisition-seeds", type=int, nargs="+", default=[100, 101, 102, 103])
+    parser_cli.add_argument("--evaluation-seeds", type=int, nargs="+", default=[200, 201, 202, 203])
+    parser_cli.add_argument("--skip-evaluation", action="store_true")
+    parser_cli.add_argument(
+        "--output", type=Path, default=ROOT / "results/fast_kv_cross_context.json",
+    )
+    parser_cli.add_argument(
+        "--memory-output", type=Path,
+        default=ROOT / "results/fast_kv_cross_context_memories.safetensors",
+    )
+    args = parser_cli.parse_args()
+    if args.target_contexts < 1:
+        raise ValueError("target-contexts must be positive")
+    if args.target_contexts == 1 and not args.skip_evaluation:
+        raise ValueError("cross-context evaluation needs at least two contexts")
+    candidate_ids = tuple(args.candidate_ids)
     wanted = set(candidate_ids)
     scenarios = {
         item.scene_id: item for item in load_mineexplorer(
@@ -96,7 +118,7 @@ def main() -> None:
     for scene_id in candidate_ids:
         scenario = scenarios[scene_id]
         records, trajectories = [], []
-        for seed in (100, 101, 102, 103):
+        for seed in args.acquisition_seeds:
             events, inputs = reset_inputs(scenario)
             torch.manual_seed(seed)
             generated = generate_with_final_kv(
@@ -161,12 +183,12 @@ def main() -> None:
             value_scale=0.25,
         )
         mixed_scene_ids.append(scene_id)
-        if len(mixed_scene_ids) == 2:
+        if len(mixed_scene_ids) == args.target_contexts:
             break
 
-    if len(mixed_scene_ids) != 2:
+    if len(mixed_scene_ids) != args.target_contexts:
         raise RuntimeError(
-            f"only found {len(mixed_scene_ids)} mixed contexts; "
+            f"only found {len(mixed_scene_ids)}/{args.target_contexts} mixed contexts; "
             f"all-equal={list(skipped_all_equal)}"
         )
 
@@ -177,7 +199,7 @@ def main() -> None:
     trials = []
     started = time.perf_counter()
     scene_ids = mixed_scene_ids
-    for scene_id in scene_ids:
+    for scene_id in (() if args.skip_evaluation else scene_ids):
         scenario = scenarios[scene_id]
         other_id = next(item for item in scene_ids if item != scene_id)
         other = memories[(other_id, "positive")]
@@ -189,7 +211,7 @@ def main() -> None:
             "contrastive_memory": memories[(scene_id, "contrastive")],
             "cross_context_memory": cross_memory,
         }
-        for seed in (200, 201, 202, 203):
+        for seed in args.evaluation_seeds:
             for condition, memory in conditions.items():
                 events, inputs = reset_inputs(scenario)
                 ids = generate_with_kv_prefix(
@@ -213,7 +235,7 @@ def main() -> None:
     ):
         subset = [trial for trial in trials if trial["condition"] == condition]
         summary[condition] = {
-            "mean_score": sum(item["score"] for item in subset) / len(subset),
+            "mean_score": (sum(item["score"] for item in subset) / len(subset)) if subset else None,
             "full_successes": sum(item["score"] == 1.0 for item in subset),
             "parser_valid": sum(item["parser_valid"] for item in subset),
             "trials": len(subset),
@@ -223,18 +245,24 @@ def main() -> None:
         "scene_ids": scene_ids,
         "memory_tokens": 4,
         "value_scale": 0.25,
+        "target_contexts": args.target_contexts,
+        "acquisition_seeds": args.acquisition_seeds,
+        "evaluation_seeds": args.evaluation_seeds,
+        "evaluation_skipped": args.skip_evaluation,
         "acquisitions": acquisitions,
         "skipped_all_equal": skipped_all_equal,
         "summary": summary,
         "trials": trials,
         "evaluation_seconds": time.perf_counter() - started,
         "peak_gpu_gib": torch.cuda.max_memory_allocated() / 2**30,
-        "scope_warning": "Two-context mechanism pilot; not the full Gate 2 suite.",
+        "scope_warning": "Mechanism acquisition; mixed outcomes are selected without using evaluation seeds.",
     }
-    output = ROOT / "results/fast_kv_cross_context.json"
+    output = args.output
+    output.parent.mkdir(parents=True, exist_ok=True)
+    args.memory_output.parent.mkdir(parents=True, exist_ok=True)
     save_file(
         {name: tensor.contiguous() for name, tensor in frozen_flattened.items()},
-        ROOT / "results/fast_kv_cross_context_memories.safetensors",
+        args.memory_output,
     )
     output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

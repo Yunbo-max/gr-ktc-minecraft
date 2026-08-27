@@ -81,7 +81,7 @@ def main() -> None:
         "kv_conditioned_lora_basis": conditional,
         "privileged_future": future,
         "latent_population": retrieval,
-        "scope_warning": "Uses two real causal quality-KV teacher contexts. Conditional/future/population results are mechanism checks; broader context and behavior evaluation remains required.",
+        "scope_warning": f"Uses {len(contexts)} real causal quality-KV teacher contexts. Conditional/future/population results are mechanism checks; broader behavior evaluation remains required.",
     }
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

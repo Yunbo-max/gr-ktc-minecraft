@@ -80,3 +80,10 @@ The next 2D key/value search found different settings for the two contexts,
 but held-out behavior remained `0/4` for Weight + K/V versus `4/4` for both
 Base and State on a ceiling seed pair. This rules out reporting the hidden-MSE
 gain as behavioral consolidation evidence.
+
+A new configurable acquisition run found four mixed real contexts. Its rank-8
+all-subset heterogeneity curve is `0.781, 0.458, 0.365, 0.320` for
+`N=1,2,3,4`, respectively. Two latent-conditioned LoRA bases improve the
+four-context fit from `rho=0.320` to `0.428`. This is still a residual-stream
+linear proxy, but it independently replicates the individual-versus-shared
+gap on twice as many causal contexts.
