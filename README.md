@@ -32,6 +32,14 @@ and the full 813-scenario MineExplorer sweep are documented in
 test over activation-shaped tensors; real VLM KV/hidden captures are required
 for causal behavioral claims.
 
+A first real-Qwen reachability pilot is now complete on two causal quality-KV
+teacher contexts, including rank 1–64 offline fits and 80 paired Minecraft
+behavior trials at ranks 8 and 32. See
+[`results/REAL_REACHABILITY_REPORT.md`](results/REAL_REACHABILITY_REPORT.md).
+It finds a persistent individual–joint reachability gap, while also showing
+that high linear hidden-effect fit is not by itself sufficient for behavioral
+retention.
+
 The runtime workspace can use the official Voyager repository, Qwen checkpoint,
 MineExplorer dataset, and paper PDFs. These large/downloaded resources are not
 committed; see `RESOURCE_MANIFEST.md` for their pinned sources.

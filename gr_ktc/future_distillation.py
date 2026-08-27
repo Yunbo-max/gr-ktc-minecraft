@@ -40,7 +40,11 @@ def future_state_loss(
     if teacher_states.shape != student_states.shape:
         raise ValueError("teacher and student states must have equal shapes")
     mse = (student_states.float() - teacher_states.float()).square().mean(dim=-1)
-    cosine = 1 - F.cosine_similarity(student_states.float(), teacher_states.float(), dim=-1)
+    cosine = (
+        1 - F.cosine_similarity(
+            student_states.float(), teacher_states.float(), dim=-1
+        )
+    ).clamp_min(0)
     per_token = mse + cosine_weight * cosine
     if token_mask is not None:
         if token_mask.shape != per_token.shape:
@@ -78,3 +82,23 @@ def future_privileged_target(
 # Backward-compatible descriptive alias for callers that prefer the adjective
 # first; both names are part of the small public analysis API.
 privileged_future_target = future_privileged_target
+
+
+def backward_future_targets(
+    states: torch.Tensor,
+    *,
+    horizon: int = 4,
+    horizon_decay: float = 0.9,
+) -> torch.Tensor:
+    """Give every trajectory position its discounted privileged future target."""
+    if states.ndim != 2 or horizon < 1 or not 0 < horizon_decay <= 1:
+        raise ValueError("states=[time, hidden], positive horizon and valid decay required")
+    targets = []
+    for index in range(states.shape[0]):
+        future = states[index:min(states.shape[0], index + horizon)]
+        weights = horizon_decay ** torch.arange(
+            future.shape[0], device=states.device, dtype=states.dtype
+        )
+        weights = weights / weights.sum().clamp_min(1e-12)
+        targets.append((future * weights[:, None]).sum(0))
+    return torch.stack(targets)

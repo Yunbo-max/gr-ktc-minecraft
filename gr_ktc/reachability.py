@@ -24,6 +24,8 @@ class ReachabilityFit:
     residual: torch.Tensor
     rho: float
     target_energy: float
+    lora_a: torch.Tensor
+    lora_b: torch.Tensor
 
     @property
     def reachable_component(self) -> torch.Tensor:
@@ -70,6 +72,8 @@ def fit_reachability(
         residual=residual,
         rho=float(min(1.0, max(0.0, rho))),
         target_energy=target_energy,
+        lora_a=a,
+        lora_b=b,
     )
 
 

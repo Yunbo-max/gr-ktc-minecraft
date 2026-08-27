@@ -97,3 +97,46 @@ def fit_conditional_lora_basis(
         basis_a.append(a)
         basis_b.append(b)
     return ConditionalLoRABasis(tuple(basis_a), tuple(basis_b), centroids, temperature)
+
+
+def fit_contextual_lora_basis(
+    coordinates: torch.Tensor,
+    contexts: list[tuple[torch.Tensor, torch.Tensor]],
+    *,
+    num_bases: int = 4,
+    rank: int = 8,
+    ridge: float = 1e-3,
+    temperature: float = 1.0,
+) -> ConditionalLoRABasis:
+    """Fit bases from variable-length token sequences grouped by latent state."""
+    if coordinates.ndim != 2 or coordinates.shape[0] != len(contexts):
+        raise ValueError("one coordinate is required per context")
+    if not contexts:
+        raise ValueError("contexts must not be empty")
+    centroids, labels = _kmeans(coordinates.float(), num_bases)
+    basis_a, basis_b = [], []
+    for index in range(centroids.shape[0]):
+        selected = [pair for pair, label in zip(contexts, labels, strict=True) if int(label) == index]
+        if not selected:
+            selected = contexts
+        x = torch.cat([pair[0] for pair in selected])
+        y = torch.cat([pair[1] for pair in selected])
+        a, b = fit_low_rank_delta(x, y, rank=rank, ridge=ridge)
+        basis_a.append(a)
+        basis_b.append(b)
+    return ConditionalLoRABasis(tuple(basis_a), tuple(basis_b), centroids, temperature)
+
+
+def conditional_reachability_score(
+    basis: ConditionalLoRABasis,
+    coordinates: torch.Tensor,
+    contexts: list[tuple[torch.Tensor, torch.Tensor]],
+) -> float:
+    """Explained target energy under continuous per-context basis mixtures."""
+    updates = basis.delta_weight(coordinates)
+    error = target_energy = 0.0
+    for update, (features, target) in zip(updates, contexts, strict=True):
+        prediction = features @ update.T
+        error += float((prediction.float() - target.float()).square().sum())
+        target_energy += float(target.float().square().sum())
+    return float(min(1.0, max(0.0, 1 - error / (target_energy + 1e-12))))

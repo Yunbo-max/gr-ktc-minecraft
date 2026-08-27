@@ -57,3 +57,11 @@ The full sweep completed over 813/813 scenarios (seed 42):
 See the raw machine-readable output at
 `results/four_new_ideas.json` and `results/four_ideas_sweep.json`.
 
+## Real-Qwen follow-up
+
+The same APIs have now been run on two real layer-24 quality-KV causal effects.
+The rank-8 individual/shared reachability values are `0.749/0.475`; at rank 32
+they are `0.941/0.797`. Eighty paired Minecraft behavior trials show State at
+`4/8` and `6/8` versus Weight-only at `0/8` and `1/8` for ranks 8 and 32,
+respectively. Read `results/REAL_REACHABILITY_REPORT.md` for the necessary
+cross-run and method-scope caveats.
