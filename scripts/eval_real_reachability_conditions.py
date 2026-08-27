@@ -27,6 +27,7 @@ if str(ROOT) not in sys.path:
 from acquisition.mineexplorer import load_mineexplorer
 from evaluation.parser_validity import VoyagerActionParser
 from evaluation.statistics import exact_mcnemar
+from gr_ktc.conditional_lora import fit_contextual_lora_basis
 from gr_ktc.generation import generate_with_kv_prefix
 from gr_ktc.kv_prefix import KVPrefixMemory
 from gr_ktc.model_loader import load_qwen3_vl_24gb
@@ -48,6 +49,7 @@ CONDITIONS = (
     "state_plus_weight", "decomposed",
     "retrieved_decomposed",
     "kv_complement",
+    "weight_conditional",
 )
 
 
@@ -58,6 +60,19 @@ def main() -> None:
     parser.add_argument("--max-new-tokens", type=int, default=384)
     parser.add_argument("--conditions", nargs="+", choices=CONDITIONS, default=list(CONDITIONS))
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--source", type=Path,
+        default=ROOT / "results/fast_kv_cross_context.json",
+    )
+    parser.add_argument(
+        "--memory-input", type=Path,
+        default=ROOT / "results/fast_kv_cross_context_memories.safetensors",
+    )
+    parser.add_argument(
+        "--reachability-data", type=Path,
+        default=ROOT / "results/real_reachability_data.safetensors",
+    )
+    parser.add_argument("--conditional-bases", type=int, default=2)
     parser.add_argument(
         "--complement-config", type=Path,
         default=ROOT / "results/causal_kv_complement_rank8.json",
@@ -70,20 +85,31 @@ def main() -> None:
     if "base" not in args.conditions:
         raise ValueError("base condition is required for paired comparisons")
 
-    source = json.loads((ROOT / "results/fast_kv_cross_context.json").read_text())
+    source = json.loads(args.source.read_text())
     scene_ids = source["scene_ids"]
     scenarios = {
         item.scene_id: item for item in load_mineexplorer(
             ROOT / "data/MineExplorer-Benchmark/benchmark.jsonl"
         ) if item.scene_id in scene_ids
     }
-    data = load_file(ROOT / "results/real_reachability_data.safetensors")
+    data = load_file(args.reachability_data)
     contexts = [(data[f"features_{scene}"], data[f"kv_effect_{scene}"]) for scene in scene_ids]
     individual = {
         scene: fit_reachability(x, y, rank=args.rank)
         for scene, (x, y) in zip(scene_ids, contexts, strict=True)
     }
     shared = fit_individual_and_shared(contexts, rank=args.rank)["shared"]
+    pooled_effects = torch.stack([target.mean(0) for _, target in contexts])
+    coordinate_rank = min(len(contexts), max(1, args.conditional_bases))
+    _, _, coordinate_basis = torch.pca_lowrank(
+        pooled_effects, q=coordinate_rank, center=True,
+    )
+    coordinates = pooled_effects @ coordinate_basis
+    conditional_basis = fit_contextual_lora_basis(
+        coordinates, contexts, num_bases=args.conditional_bases,
+        rank=args.rank, temperature=0.01,
+    )
+    conditional_coefficients = conditional_basis.coefficients(coordinates)
     shared_unreachable = {
         scene: target - features @ shared.delta_weight.T
         for scene, (features, target) in zip(scene_ids, contexts, strict=True)
@@ -96,7 +122,7 @@ def main() -> None:
     layer = text_layer(model, 24)
     config = model.config.text_config
     head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
-    flat = load_file(ROOT / "results/fast_kv_cross_context_memories.safetensors")
+    flat = load_file(args.memory_input)
     memories = {}
     quality_flattened = {}
     for scene in scene_ids:
@@ -180,6 +206,17 @@ def main() -> None:
                 with ExitStack() as hooks:
                     if condition in ("weight_individual", "weight_shared", "state_plus_weight", "decomposed", "retrieved_decomposed", "kv_complement"):
                         hooks.enter_context(ResidualLoRAHook(layer, fit.lora_a, fit.lora_b))
+                    if condition == "weight_conditional":
+                        scene_index = scene_ids.index(scene)
+                        for coefficient, basis_a, basis_b in zip(
+                            conditional_coefficients[scene_index],
+                            conditional_basis.basis_a,
+                            conditional_basis.basis_b,
+                            strict=True,
+                        ):
+                            hooks.enter_context(ResidualLoRAHook(
+                                layer, basis_a, basis_b, scale=float(coefficient),
+                            ))
                     if condition == "decomposed":
                         hooks.enter_context(ScheduledResidualStateHook(layer, shared_unreachable[scene]))
                     if condition == "retrieved_decomposed":
@@ -246,6 +283,8 @@ def main() -> None:
         "rank": args.rank, "scene_ids": scene_ids, "seeds": args.seeds,
         "conditions": args.conditions,
         "complement_value_scales": complement_scales,
+        "conditional_bases": args.conditional_bases,
+        "conditional_coefficients": conditional_coefficients.tolist(),
         "summary": summary, "comparisons": comparisons, "trials": trials,
         "rho_individual_mean": sum(x.rho for x in individual.values()) / len(individual),
         "rho_shared": shared.rho,

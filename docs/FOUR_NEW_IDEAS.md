@@ -87,3 +87,15 @@ all-subset heterogeneity curve is `0.781, 0.458, 0.365, 0.320` for
 four-context fit from `rho=0.320` to `0.428`. This is still a residual-stream
 linear proxy, but it independently replicates the individual-versus-shared
 gap on twice as many causal contexts.
+
+In paired behavior, however, the same two-basis model scores `2/8`, versus
+Shared `3/8`, Base `6/8`, and native State `8/8`. The repository therefore
+does not claim that conditional bases solve consolidation; their offline gain
+currently fails the generate-path validity gate.
+
+Privileged-future targets now use a real frozen same-model teacher: it sees the
+verified successful future action and terminal score, while the student sees
+only the current state. Across four contexts, rank-8 individual/shared
+reachability is `0.291/0.187` (`0.913/0.442` at rank 64). This replaces the
+earlier time-smoothed proxy with an actual information-asymmetric VLM target;
+adapter training and held-out behavior remain open.
