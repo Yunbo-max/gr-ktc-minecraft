@@ -49,13 +49,21 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=ROOT / "results/peam_compatible.json")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--refresh-capped", action="store_true",
+        help="With --resume, rerun complete trials containing a generation at the old cap.",
+    )
     parser.add_argument("--task-ids", nargs="*", default=[])
     parser.add_argument(
         "--conditions", nargs="+", choices=("base", "control", "full"),
         default=("base", "control", "full"),
     )
     parser.add_argument("--attempts", type=int, default=4)
-    parser.add_argument("--max-new-tokens", type=int, default=512)
+    parser.add_argument("--max-new-tokens", type=int, default=2048)
+    parser.add_argument(
+        "--precision", choices=("bf16", "nf4"), default="bf16",
+        help="PEAM uses bf16 inference; nf4 is diagnostic-only on 24GB hardware.",
+    )
     parser.add_argument(
         "--world-snapshot", type=Path,
         default=ROOT / "runtime/world_snapshots/peam_seed42",
@@ -130,7 +138,7 @@ def main() -> None:
         raise ValueError(f"unknown task ids: {sorted(unknown)}")
 
     base, processor = load_qwen3_vl_24gb(
-        ROOT / "models/Qwen3-VL-8B-Instruct", precision="nf4"
+        ROOT / "models/Qwen3-VL-8B-Instruct", precision=args.precision
     )
     from peft import PeftModel
     model = PeftModel.from_pretrained(
@@ -150,7 +158,19 @@ def main() -> None:
     programs = primitive_programs()
     trials: list[dict] = []
     if args.resume and args.output.exists():
-        trials = json.loads(args.output.read_text()).get("trials", [])
+        previous = json.loads(args.output.read_text())
+        previous_cap = int(previous.get("max_new_tokens", args.max_new_tokens))
+        trials = previous.get("trials", [])
+        for row in trials:
+            row.setdefault("generation_cap", previous_cap)
+        if args.refresh_capped:
+            trials = [
+                row for row in trials
+                if not any(
+                    int(attempt["generated_tokens"]) >= int(row["generation_cap"])
+                    for attempt in row["attempts"]
+                )
+            ]
     completed = {(row["task_id"], row["seed"], row["condition"]) for row in trials}
     started = time.perf_counter()
 
@@ -162,9 +182,13 @@ def main() -> None:
                 "not an official PEAM reproduction and not Azure-GPT-4o parity."
             ),
             "minecraft": "1.19",
+            "precision": args.precision,
             "seeds": list(PEAM_SEEDS),
             "retry_budget": args.attempts,
             "max_new_tokens": args.max_new_tokens,
+            "generation_caps_in_trials": sorted({
+                int(row.get("generation_cap", args.max_new_tokens)) for row in trials
+            }),
             "world_snapshot": str(args.world_snapshot.resolve()),
             "paired_world_restore": True,
             "summary": summarize(trials, list(args.conditions)),
@@ -192,6 +216,7 @@ def main() -> None:
                 success = False
                 events = initial_events
                 for attempt_index in range(args.attempts):
+                    abort_trial = False
                     observation = final_observation(events)
                     messages = [
                         {"role": "system", "content": [{"type": "text", "text": SYSTEM}]},
@@ -241,7 +266,12 @@ def main() -> None:
                             )
                         except Exception as exc:
                             execution_error = f"{type(exc).__name__}: {exc}"
-                            events = client.step(code="await bot.waitForTicks(1);")
+                            # A timed-out /step may still be executing inside
+                            # Mineflayer. Sending a recovery request to the same
+                            # bridge can deadlock as well. Record the failure,
+                            # end this trial, and let the next paired condition
+                            # restore its pristine world and restart the stack.
+                            abort_trial = True
                     success = parsed is not None and verify_events(task, events)
                     attempts.append({
                         "attempt": attempt_index + 1,
@@ -256,10 +286,13 @@ def main() -> None:
                     })
                     if success:
                         break
+                    if abort_trial:
+                        break
                 trial = {
                     "task_id": task.task_id, "category": task.category,
                     "task": task.instruction, "seed": seed, "condition": condition,
                     "task_success": success, "attempts": attempts,
+                    "generation_cap": args.max_new_tokens,
                 }
                 trials.append(trial)
                 completed.add(key)

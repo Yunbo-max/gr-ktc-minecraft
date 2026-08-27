@@ -5,7 +5,13 @@
     "trials": 99,
     "unique_trials": 99,
     "paired_world_restore": true,
-    "max_retries": 4
+    "max_retries": 4,
+    "generation_caps": [
+      512,
+      2048
+    ],
+    "lower_cap_truncations": 0,
+    "peam_2048_cap_hits": 1
   },
   "methods": {
     "base": {
@@ -16,11 +22,11 @@
         0.08610768208940667,
         0.3438823163466992
       ],
-      "parser_valid": 107,
+      "parser_valid": 110,
       "calls": 116,
-      "parser_valid_rate": 0.9224137931034483,
-      "median_call_latency_seconds": 18.64723399048671,
-      "tokens_per_task": 307.72727272727275
+      "parser_valid_rate": 0.9482758620689655,
+      "median_call_latency_seconds": 18.538267949945293,
+      "tokens_per_task": 367.42424242424244
     },
     "control": {
       "successes": 3,

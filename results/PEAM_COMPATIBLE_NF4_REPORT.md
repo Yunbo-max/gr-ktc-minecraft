@@ -1,10 +1,12 @@
-# Gate 4 — PEAM-compatible local-Qwen stress test
+# Gate 4 — PEAM-compatible local-Qwen NF4 diagnostic
 
-Local Qwen-only stress test with published PEAM task/seed/retry/verifier structure. It is not an official PEAM reproduction and is not paired with the paper's GPT-4o tier.
+Diagnostic NF4 run with the published PEAM task/seed/retry/verifier structure.
+It is not the BF16 primary run, an official PEAM reproduction, or paired with
+the paper's GPT-4o tier.
 
 | Method | Success | Wilson 95% CI | Parser valid | Median call | Tokens/task |
 |---|---:|---:|---:|---:|---:|
-| Local Qwen base | 6/33 (18.2%) | [8.6%, 34.4%] | 107/116 | 18.65s | 307.7 |
+| Local Qwen base | 6/33 (18.2%) | [8.6%, 34.4%] | 110/116 | 18.54s | 367.4 |
 | Shared QLoRA BC+DPO | 3/33 (9.1%) | [3.1%, 23.6%] | 123/123 | 30.59s | 275.3 |
 | GR-KTC slow (memory-free) | 5/33 (15.2%) | [6.7%, 30.9%] | 123/123 | 23.25s | 245.6 |
 

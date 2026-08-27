@@ -32,6 +32,17 @@ def build_report(payload: dict) -> dict:
         errors.append("paired world restoration was not recorded")
     if any(not 1 <= len(row.get("attempts", [])) <= 4 for row in trials):
         errors.append("one or more trials violate the 1..4 retry budget")
+    lower_cap_hits = [
+        (row["task_id"], row["seed"], row["condition"])
+        for row in trials
+        if int(row.get("generation_cap", 0)) < 2048
+        and any(
+            int(attempt["generated_tokens"]) >= int(row["generation_cap"])
+            for attempt in row["attempts"]
+        )
+    ]
+    if lower_cap_hits:
+        errors.append(f"lower-cap truncations remain: {lower_cap_hits}")
     if errors:
         raise ValueError("; ".join(errors))
 
@@ -77,8 +88,17 @@ def build_report(payload: dict) -> dict:
         }
     return {
         "protocol": "peam-compatible-local-qwen-report-v1",
-        "audit": {"complete": True, "trials": 99, "unique_trials": 99,
-                  "paired_world_restore": True, "max_retries": 4},
+        "audit": {
+            "complete": True, "trials": 99, "unique_trials": 99,
+            "paired_world_restore": True, "max_retries": 4,
+            "generation_caps": sorted({int(row["generation_cap"]) for row in trials}),
+            "lower_cap_truncations": 0,
+            "peam_2048_cap_hits": sum(
+                int(row["generation_cap"]) == 2048
+                and any(int(attempt["generated_tokens"]) >= 2048 for attempt in row["attempts"])
+                for row in trials
+            ),
+        },
         "methods": methods,
         "per_task_successes_out_of_3": per_task,
         "comparisons": comparisons,
