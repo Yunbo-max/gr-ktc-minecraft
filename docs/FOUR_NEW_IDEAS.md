@@ -75,3 +75,8 @@ teacher-forced hidden MSE, but its Weight + KV complement condition scored
 geometry must be learned. A 24-trial
 memory-free 1–4-hop MineExplorer pilot is stored in
 `results/memory_free_hop_generalization_pilot.json`.
+
+The next 2D key/value search found different settings for the two contexts,
+but held-out behavior remained `0/4` for Weight + K/V versus `4/4` for both
+Base and State on a ceiling seed pair. This rules out reporting the hidden-MSE
+gain as behavioral consolidation evidence.

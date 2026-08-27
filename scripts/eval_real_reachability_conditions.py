@@ -119,7 +119,10 @@ def main() -> None:
     if "kv_complement" in args.conditions:
         complement_report = json.loads(args.complement_config.read_text())
         complement_scales = {
-            scene: float(complement_report["contexts"][scene]["selected"]["value_scale"])
+            scene: {
+                "key_scale": float(complement_report["contexts"][scene]["selected"].get("key_scale", 1.0)),
+                "value_scale": float(complement_report["contexts"][scene]["selected"]["value_scale"]),
+            }
             for scene in scene_ids
         }
 
@@ -170,7 +173,8 @@ def main() -> None:
                         kv_heads=config.num_key_value_heads,
                         head_dim=head_dim,
                         context_id=f"{scene}:matched",
-                        value_scale=complement_scales[scene],
+                        key_scale=complement_scales[scene]["key_scale"],
+                        value_scale=complement_scales[scene]["value_scale"],
                     )
                 fit = individual[scene] if condition == "weight_individual" else shared
                 with ExitStack() as hooks:

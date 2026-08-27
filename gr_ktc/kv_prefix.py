@@ -53,10 +53,11 @@ class KVPrefixMemory:
         kv_heads: int,
         head_dim: int,
         context_id: str,
+        key_scale: float = 1.0,
         value_scale: float = 1.0,
     ) -> "KVPrefixMemory":
-        if value_scale < 0:
-            raise ValueError("value_scale must be nonnegative")
+        if key_scale < 0 or value_scale < 0:
+            raise ValueError("key_scale and value_scale must be nonnegative")
         width = kv_heads * head_dim
         layers: dict[int, LayerKV] = {}
         for layer_id, states in flattened.items():
@@ -64,7 +65,9 @@ class KVPrefixMemory:
                 raise ValueError(
                     f"layer {layer_id} expected flattened width {2 * width}, got {tuple(states.shape)}"
                 )
-            key = states[:, :width].reshape(-1, kv_heads, head_dim).permute(1, 0, 2).unsqueeze(0)
+            key = (states[:, :width] * key_scale).reshape(
+                -1, kv_heads, head_dim
+            ).permute(1, 0, 2).unsqueeze(0)
             value = (states[:, width:] * value_scale).reshape(
                 -1, kv_heads, head_dim
             ).permute(1, 0, 2).unsqueeze(0)

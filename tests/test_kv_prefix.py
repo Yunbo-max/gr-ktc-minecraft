@@ -35,6 +35,21 @@ def test_value_scale_only_scales_values():
     assert torch.all(memory.layers[0].value == 0.25)
 
 
+def test_key_and_value_scales_are_independent():
+    states = torch.ones(2, 8)
+    memory = KVPrefixMemory.from_flattened(
+        {0: states}, kv_heads=1, head_dim=4, context_id="ctx",
+        key_scale=1.5, value_scale=0.25,
+    )
+    assert torch.all(memory.layers[0].key == 1.5)
+    assert torch.all(memory.layers[0].value == 0.25)
+
+    with pytest.raises(ValueError, match="nonnegative"):
+        KVPrefixMemory.from_flattened(
+            {0: states}, kv_heads=1, head_dim=4, context_id="ctx", key_scale=-1,
+        )
+
+
 def test_memory_rejects_cross_context_and_missing_layers():
     memory = KVPrefixMemory.from_flattened(
         {0: torch.randn(2, 8)}, kv_heads=1, head_dim=4, context_id="ctx_a"

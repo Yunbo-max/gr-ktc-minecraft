@@ -2,7 +2,7 @@
 """Fit an unreachable-state complement while preserving the native KV interface.
 
 For each real teacher context, keep the shared rank-r residual weight update
-fixed and search the strength of the original quality-KV memory.  Selection is
+fixed and search separate key/value strengths of the original quality-KV memory. Selection is
 made by teacher-forced hidden-effect error, never by Minecraft evaluation
 outcome.  This is a conservative one-dimensional causal complement baseline.
 """
@@ -36,6 +36,7 @@ from scripts.run_local_smoke_suite import SYSTEM
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--rank", type=int, default=8)
+    parser.add_argument("--key-scales", type=float, nargs="+", default=[0.5, 0.75, 1.0, 1.25, 1.5])
     parser.add_argument("--value-scales", type=float, nargs="+", default=[0.0, 0.0625, 0.125, 0.1875, 0.25])
     parser.add_argument("--output", type=Path, default=ROOT / "results/causal_kv_complement_rank8.json")
     args = parser.parse_args()
@@ -101,13 +102,17 @@ def main() -> None:
         candidates = []
         # Weight-only is an explicit candidate, unlike scale zero which still
         # appends keys and changes attention normalization.
-        candidate_specs = [("weight_only", None)] + [(f"kv_{scale:g}", scale) for scale in args.value_scales]
-        for name, scale in candidate_specs:
+        candidate_specs = [("weight_only", None, None)] + [
+            (f"kv_k{key_scale:g}_v{value_scale:g}", key_scale, value_scale)
+            for key_scale in args.key_scales for value_scale in args.value_scales
+        ]
+        for name, key_scale, value_scale in candidate_specs:
             memory = None
-            if scale is not None:
+            if value_scale is not None:
                 memory = KVPrefixMemory.from_flattened(
                     quality, kv_heads=config.num_key_value_heads, head_dim=head_dim,
-                    context_id=f"{scene}:matched", value_scale=scale,
+                    context_id=f"{scene}:matched", key_scale=key_scale,
+                    value_scale=value_scale,
                 )
             with ResidualLoRAHook(layer, shared.lora_a, shared.lora_b):
                 state = teacher_forced_hidden_with_kv_prefix(
@@ -122,7 +127,7 @@ def main() -> None:
             target_effect = target[:take].float() - no_memory[:take].float()
             effect_rho = 1 - float((effect - target_effect).square().sum() / target_effect.square().sum().clamp_min(1e-12))
             candidates.append({
-                "name": name, "value_scale": scale,
+                "name": name, "key_scale": key_scale, "value_scale": value_scale,
                 "relative_state_mse": relative_mse,
                 "effect_rho": effect_rho,
             })
@@ -130,12 +135,12 @@ def main() -> None:
         results[scene] = {"candidates": candidates, "selected": best_candidate}
 
     report = {
-        "protocol": "causal-kv-complement-search-v1",
+        "protocol": "causal-kv-complement-search-v2",
         "rank": args.rank,
         "rho_shared_linear_proxy": shared.rho,
         "contexts": results,
         "selection_rule": "minimum teacher-forced layer-24 state MSE; no environment outcome used",
-        "scope_warning": "One-dimensional value-scale search over the native quality-KV support; not a full learned unreachable KV projection.",
+        "scope_warning": "Two-dimensional key/value scale search over the native quality-KV support; not a full learned unreachable KV projection.",
     }
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

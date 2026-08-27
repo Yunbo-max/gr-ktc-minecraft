@@ -86,6 +86,15 @@ does not preserve the behavioral rescue. The next method must learn the K/V
 geometry (and likely query-dependent routing), not merely replay hidden states
 or attenuate a fixed prefix.
 
+A two-dimensional native-KV search then varied key and value scales
+independently. It selected context-dependent settings: `(K=1.0,V=0.25)` for
+0281 and `(K=0.5,V=0.1875)` for 0299. On held-out seeds 310/311, Base and State
+were both at the ceiling (`4/4`), while Weight-shared and the selected K/V
+complement were both `0/4`. This run cannot measure rescue because Base is at
+ceiling, but it independently confirms that the current shared residual-weight
+realization is behaviorally destructive and that teacher-forced K/V fitting is
+not a sufficient selection criterion.
+
 ## Other three ideas on real effects
 
 - KV-conditioned basis, rank 8: one shared basis `rho=0.475`; two
@@ -107,6 +116,8 @@ or attenuate a fixed prefix.
 - `real_reachability_retrieved_rank8.json`: 16 query-retrieved split trials.
 - `causal_kv_complement_rank8.json`: teacher-forced native-KV scale search.
 - `real_reachability_kv_complement_rank8.json`: 16 scaled-KV behavior trials.
+- `causal_kv_geometry_rank8.json`: two-dimensional K/V scale search.
+- `real_reachability_kv_geometry_rank8.json`: 16 held-out K/V geometry trials.
 
 ## MineExplorer hop generalization
 
