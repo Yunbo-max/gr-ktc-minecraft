@@ -44,6 +44,11 @@ def main() -> None:
         "--memory-output", type=Path,
         default=ROOT / "results/fast_kv_cross_context_memories.safetensors",
     )
+    parser_cli.add_argument(
+        "--raw-layer-output", type=Path,
+        help="Optionally save every accepted rollout's unmerged K/V trajectory.",
+    )
+    parser_cli.add_argument("--raw-layer", type=int, default=24)
     args = parser_cli.parse_args()
     if args.target_contexts < 1:
         raise ValueError("target-contexts must be positive")
@@ -114,6 +119,7 @@ def main() -> None:
     skipped_all_equal = {}
     memories = {}
     frozen_flattened = {}
+    raw_layer_tensors = {}
     mixed_scene_ids = []
     for scene_id in candidate_ids:
         scenario = scenarios[scene_id]
@@ -142,6 +148,11 @@ def main() -> None:
         acquisitions[scene_id] = {
             "records": records, "advantages": advantages.tolist()
         }
+        if args.raw_layer_output is not None:
+            for rollout_index, trajectory in enumerate(trajectories):
+                raw_layer_tensors[
+                    f"scene_{scene_id}_rollout_{rollout_index}_layer_{args.raw_layer}"
+                ] = trajectory[args.raw_layer].cpu().contiguous()
         for label, mask in (
             ("positive", advantages > 0), ("failed", advantages < 0)
         ):
@@ -264,6 +275,9 @@ def main() -> None:
         {name: tensor.contiguous() for name, tensor in frozen_flattened.items()},
         args.memory_output,
     )
+    if args.raw_layer_output is not None:
+        args.raw_layer_output.parent.mkdir(parents=True, exist_ok=True)
+        save_file(raw_layer_tensors, args.raw_layer_output)
     output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
 
