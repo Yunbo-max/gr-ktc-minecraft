@@ -33,6 +33,21 @@ PYTHONPATH=. .venv/bin/python scripts/run_four_ideas_sweep.py \
   --output results/four_ideas_sweep.json
 ```
 
+## Cross-context Grassmann hypothesis (follow-up)
+
+A four-context merged-support pilot suggested Key-subspace Grassmann distance
+might predict pairwise shared-LoRA interference (`Spearman=0.829`, exact
+`p=0.058`). The preregistered combined K/V metric failed, so Key was treated as
+a secondary hypothesis requiring independent replication.
+
+That replication collected 8 new rollouts for each of 8 mixed contexts and
+saved raw layer-24 K/V before merging. Across all 28 pairs, the fixed Key
+primary falls to `Spearman=0.159`, permutation `p=0.417`, with context-bootstrap
+95% CI `[-0.714,0.833]`. V, joint, and averaged geometry also fail. Therefore
+the repository stops the Grassmann Transport/SMC branch rather than tuning
+subspace rank or distance after seeing the result. See
+`results/CROSS_CONTEXT_MISALIGNMENT_REPLICATION.md`.
+
 The 24GB model settings are in `configs/four_ideas_24gb.yaml`. Analysis is
 offloaded to CPU and uses one BLAS thread to make hundreds of small SVDs fast;
 this does not change Qwen inference or QLoRA settings.

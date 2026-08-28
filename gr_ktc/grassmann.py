@@ -87,6 +87,75 @@ def exact_permutation_pvalue(x: torch.Tensor, y: torch.Tensor) -> tuple[float, i
     return exceed / total, total
 
 
+def permutation_pvalue(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    *,
+    samples: int = 100_000,
+    seed: int = 42,
+) -> tuple[float, int, bool]:
+    """Two-sided permutation p-value; exact up to eight pairs, Monte Carlo above."""
+    if len(x) <= 8:
+        p, count = exact_permutation_pvalue(x, y)
+        return p, count, True
+    if samples < 1:
+        raise ValueError("samples must be positive")
+    observed = abs(spearman_correlation(x, y))
+    generator = torch.Generator().manual_seed(seed)
+    exceed = 0
+    for _ in range(samples):
+        statistic = abs(spearman_correlation(x, y[torch.randperm(len(y), generator=generator)]))
+        exceed += statistic >= observed - 1e-12
+    # Add-one correction makes the Monte Carlo estimate finite and valid.
+    return (exceed + 1) / (samples + 1), samples, False
+
+
+def context_bootstrap_spearman_interval(
+    pair_values: dict[tuple[str, str], tuple[float, float]],
+    contexts: list[str],
+    *,
+    samples: int = 10_000,
+    confidence: float = 0.95,
+    seed: int = 42,
+) -> tuple[float, float, int]:
+    """Cluster bootstrap contexts, preserving pair dependence.
+
+    A resampled context may occur multiple times. Pairs between distinct
+    original contexts are repeated according to their bootstrap multiplicity;
+    self-pairs are omitted because their distance/interference is structurally
+    zero and was not part of the observed sample.
+    """
+    if len(contexts) < 3 or samples < 1 or not 0 < confidence < 1:
+        raise ValueError("invalid context bootstrap settings")
+    generator = torch.Generator().manual_seed(seed)
+    estimates = []
+    for _ in range(samples):
+        sampled = [contexts[index] for index in torch.randint(
+            len(contexts), (len(contexts),), generator=generator,
+        ).tolist()]
+        x, y = [], []
+        for first_index in range(len(sampled)):
+            for second_index in range(first_index + 1, len(sampled)):
+                first, second = sampled[first_index], sampled[second_index]
+                if first == second:
+                    continue
+                key = tuple(sorted((first, second)))
+                distance, interference = pair_values[key]
+                x.append(distance)
+                y.append(interference)
+        if len(x) >= 3 and len(set(x)) >= 2 and len(set(y)) >= 2:
+            estimates.append(spearman_correlation(torch.tensor(x), torch.tensor(y)))
+    if not estimates:
+        raise ValueError("all context bootstrap samples were degenerate")
+    estimates_tensor = torch.tensor(estimates)
+    tail = (1 - confidence) / 2
+    return (
+        float(estimates_tensor.quantile(tail)),
+        float(estimates_tensor.quantile(1 - tail)),
+        len(estimates),
+    )
+
+
 def bootstrap_spearman_interval(
     x: torch.Tensor,
     y: torch.Tensor,

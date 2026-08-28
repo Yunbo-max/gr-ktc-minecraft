@@ -19,13 +19,15 @@ if str(ROOT) not in sys.path:
 from gr_ktc.grassmann import (
     bootstrap_spearman_interval,
     consensus_spectrum,
-    exact_permutation_pvalue,
+    context_bootstrap_spearman_interval,
     grassmann_distance,
     latent_subspace,
+    permutation_pvalue,
     principal_angles,
     spearman_correlation,
 )
-from gr_ktc.reachability import fit_individual_and_shared
+from gr_ktc.merge_b_softdtw import linear_resample
+from gr_ktc.reachability import fit_reachability
 
 
 def main() -> None:
@@ -42,13 +44,28 @@ def main() -> None:
     parser.add_argument("--subspace-rank", type=int, default=2)
     parser.add_argument("--lora-rank", type=int, default=8)
     parser.add_argument("--bootstrap-samples", type=int, default=10_000)
+    parser.add_argument("--permutation-samples", type=int, default=100_000)
+    parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--source", type=Path)
+    parser.add_argument("--raw-trajectories", type=Path)
+    parser.add_argument("--phase-tokens", type=int, default=32)
+    parser.add_argument(
+        "--replication-primary",
+        choices=("key_grassmann", "value_grassmann", "joint_grassmann", "kv_mean_grassmann"),
+        default="kv_mean_grassmann",
+    )
     parser.add_argument(
         "--output", type=Path,
         default=ROOT / "results/kv_subspace_misalignment_four_contexts.json",
     )
     args = parser.parse_args()
+    torch.set_num_threads(max(1, args.threads))
+    if (args.source is None) != (args.raw_trajectories is None):
+        raise ValueError("source and raw-trajectories must be supplied together")
 
     raw = load_file(args.memories)
+    raw_rollouts = load_file(args.raw_trajectories) if args.raw_trajectories else None
+    source = json.loads(args.source.read_text()) if args.source else None
     reachability = load_file(args.reachability)
     scenes = sorted(
         key.removeprefix("features_")
@@ -63,7 +80,29 @@ def main() -> None:
     for scene in scenes:
         positive = raw[f"scene_{scene}_positive_layer_{args.layer}"].float()
         failed = raw[f"scene_{scene}_failed_layer_{args.layer}"].float()
-        correction = positive - failed
+        if raw_rollouts is None:
+            correction = positive - failed
+        else:
+            advantages = torch.tensor(source["acquisitions"][scene]["advantages"])
+            trajectories = [
+                linear_resample(
+                    raw_rollouts[f"scene_{scene}_rollout_{index}_layer_{args.layer}"].float(),
+                    args.phase_tokens,
+                )
+                for index in range(len(advantages))
+            ]
+            failed_center = torch.stack([
+                trajectory for trajectory, advantage in zip(
+                    trajectories, advantages, strict=True,
+                ) if float(advantage) < 0
+            ]).mean(0)
+            # Each successful rollout contributes its full phase-aligned
+            # correction relative to the same failed barycenter.
+            correction = torch.cat([
+                trajectory - failed_center for trajectory, advantage in zip(
+                    trajectories, advantages, strict=True,
+                ) if float(advantage) > 0
+            ])
         corrections[scene] = correction
         matrices = {
             "key": correction[:, :width],
@@ -77,12 +116,22 @@ def main() -> None:
             reachability[f"kv_effect_{scene}"],
         )
 
+    individual_fits = {
+        scene: fit_reachability(*contexts[scene], rank=args.lora_rank)
+        for scene in scenes
+    }
     pairs = []
     for first, second in itertools.combinations(scenes, 2):
         pair_contexts = [contexts[first], contexts[second]]
-        fit = fit_individual_and_shared(pair_contexts, rank=args.lora_rank)
-        individual_mean = float(fit["rho_individual_mean"])
-        shared = float(fit["rho_shared"])
+        shared_fit = fit_reachability(
+            torch.cat([pair[0] for pair in pair_contexts]),
+            torch.cat([pair[1] for pair in pair_contexts]),
+            rank=args.lora_rank,
+        )
+        individual_mean = (
+            individual_fits[first].rho + individual_fits[second].rho
+        ) / 2
+        shared = float(shared_fit.rho)
         record = {
             "first": first,
             "second": second,
@@ -113,15 +162,29 @@ def main() -> None:
     ):
         distances = torch.tensor([x[metric] for x in pairs])
         rho = spearman_correlation(distances, interference)
-        p_value, permutations = exact_permutation_pvalue(distances, interference)
+        p_value, permutations, exact = permutation_pvalue(
+            distances, interference, samples=args.permutation_samples,
+        )
         low, high = bootstrap_spearman_interval(
             distances, interference, samples=args.bootstrap_samples,
         )
+        pair_values = {
+            tuple(sorted((record["first"], record["second"]))): (
+                record[metric], record["interference"],
+            )
+            for record in pairs
+        }
+        context_low, context_high, valid_bootstraps = context_bootstrap_spearman_interval(
+            pair_values, scenes, samples=args.bootstrap_samples,
+        )
         correlations[metric] = {
             "spearman": rho,
-            "exact_two_sided_permutation_p": p_value,
+            "two_sided_permutation_p": p_value,
             "permutations": permutations,
+            "permutation_exact": exact,
             "bootstrap_90ci_pair_resampling": [low, high],
+            "bootstrap_95ci_context_resampling": [context_low, context_high],
+            "valid_context_bootstraps": valid_bootstraps,
         }
 
     spectra = {}
@@ -133,32 +196,47 @@ def main() -> None:
             "trace": float(spectrum.sum()),
         }
 
-    primary = correlations["kv_mean_grassmann"]
+    primary = correlations[args.replication_primary]
+    replication = raw_rollouts is not None
     gate = (
-        primary["spearman"] > 0.5
-        and primary["exact_two_sided_permutation_p"] <= 0.10
-        and primary["bootstrap_90ci_pair_resampling"][0] > 0
+        primary["spearman"] > (0.0 if replication else 0.5)
+        and primary["two_sided_permutation_p"] <= (0.05 if replication else 0.10)
+        and primary[
+            "bootstrap_95ci_context_resampling" if replication
+            else "bootstrap_90ci_pair_resampling"
+        ][0] > 0
     )
     report = {
-        "protocol": "cross-context-consolidation-misalignment-pilot-v1",
+        "protocol": "cross-context-consolidation-misalignment-raw-replication-v2" if replication else "cross-context-consolidation-misalignment-pilot-v2",
         "scenes": scenes,
         "layer": args.layer,
         "subspace_rank": args.subspace_rank,
         "lora_rank": args.lora_rank,
-        "native_correction": "positive_KV_barycenter - failed_KV_barycenter",
+        "native_correction": (
+            "each phase-aligned successful raw KV trajectory - failed raw KV barycenter"
+            if replication else "positive_KV_barycenter - failed_KV_barycenter"
+        ),
         "basis_axis": "right singular vectors in latent feature space",
         "pairs": pairs,
         "correlations": correlations,
         "consensus_spectrum": spectra,
-        "preregistered_primary": "mean of separate K and V Grassmann distances",
-        "gate_rule": "Spearman > 0.5, exact permutation p <= 0.10, pair-bootstrap 90% lower bound > 0",
+        "preregistered_primary": args.replication_primary,
+        "gate_rule": (
+            "positive Spearman, permutation p <= 0.05, context-bootstrap 95% lower bound > 0"
+            if replication else
+            "Spearman > 0.5, permutation p <= 0.10, pair-bootstrap 90% lower bound > 0"
+        ),
         "gate_pass": gate,
         "next_action": (
-            "expand to 8 contexts before implementing transport/SMC"
+            "implement transport/SMC after independent raw-trajectory replication"
             if gate else
-            "stop Grassmann method branch; four-context pilot does not support misalignment hypothesis"
+            "stop Grassmann method branch; preregistered misalignment hypothesis did not replicate"
         ),
-        "scope_warning": "Only four contexts/six dependent pairs and four-token merged supports. Pair bootstrap is descriptive; exact permutation is the primary finite-sample test. Raw per-rollout successful KV trajectories are required for a definitive study.",
+        "scope_warning": (
+            "Eight-context raw-trajectory replication; pair observations remain dependent, so context-cluster bootstrap is required. Reachability is a residual-stream low-rank proxy."
+            if replication else
+            "Only four contexts/six dependent pairs and four-token merged supports. Pair bootstrap is descriptive; permutation is the primary finite-sample test."
+        ),
     }
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
